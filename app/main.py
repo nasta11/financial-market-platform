@@ -1,3 +1,6 @@
+import pandas as pd
+import plotly.express as px
+from fastapi.responses import HTMLResponse
 from fastapi import FastAPI, Depends
 from sqlalchemy.orm import Session
 
@@ -88,3 +91,42 @@ def get_analytics(ticker: str, db: Session = Depends(get_db)):
         "min_close_price": round(min(close_prices), 2),
         "total_volume": sum(volumes)
     }
+@app.get("/chart/{ticker}", response_class=HTMLResponse)
+def get_price_chart(ticker: str, db: Session = Depends(get_db)):
+    prices = (
+        db.query(StockPrice)
+        .filter(StockPrice.ticker == ticker.upper())
+        .order_by(StockPrice.date)
+        .all()
+    )
+
+    if not prices:
+        return "<h3>No data found</h3>"
+
+    data = [
+        {
+            "date": p.date,
+            "close_price": p.close_price
+        }
+        for p in prices
+    ]
+
+    df = pd.DataFrame(data)
+
+    fig = px.line(
+        df,
+        x="date",
+        y="close_price",
+        title=f"{ticker.upper()} Stock Price"
+    )
+
+    return fig.to_html(full_html=True)
+@app.get("/tickers")
+def get_tickers(db: Session = Depends(get_db)):
+    tickers = (
+        db.query(StockPrice.ticker)
+        .distinct()
+        .all()
+    )
+
+    return [ticker[0] for ticker in tickers]
