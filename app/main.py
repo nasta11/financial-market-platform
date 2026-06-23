@@ -210,3 +210,51 @@ def dashboard(ticker: str, db: Session = Depends(get_db)):
     </body>
     </html>
     """
+
+
+@app.get("/compare/{ticker1}/{ticker2}", response_class=HTMLResponse)
+def compare_assets(ticker1: str, ticker2: str, db: Session = Depends(get_db)):
+    data = []
+
+    for ticker in [ticker1.upper(), ticker2.upper()]:
+        prices = (
+            db.query(StockPrice)
+            .filter(StockPrice.ticker == ticker)
+            .order_by(StockPrice.date)
+            .all()
+        )
+
+        for p in prices:
+            data.append({
+                "date": p.date,
+                "ticker": ticker,
+                "close_price": p.close_price
+            })
+
+    if not data:
+        return "<h1>Данные не найдены</h1>"
+
+    df = pd.DataFrame(data)
+
+    fig = px.line(
+        df,
+        x="date",
+        y="close_price",
+        color="ticker",
+        title=f"Сравнение динамики цен: {ticker1.upper()} и {ticker2.upper()}"
+    )
+
+    return f"""
+    <html>
+    <head>
+        <title>Сравнение финансовых активов</title>
+    </head>
+    <body style="font-family: Arial; margin: 40px;">
+        <h1>Сравнение финансовых активов</h1>
+        <h2>{ticker1.upper()} и {ticker2.upper()}</h2>
+
+        <h3>График сравнения цен закрытия</h3>
+        {fig.to_html(full_html=False)}
+    </body>
+    </html>
+    """
