@@ -1,3 +1,4 @@
+from sklearn.linear_model import LinearRegression
 import pandas as pd
 import plotly.express as px
 from fastapi.responses import HTMLResponse
@@ -130,3 +131,82 @@ def get_tickers(db: Session = Depends(get_db)):
     )
 
     return [ticker[0] for ticker in tickers]
+@app.get("/dashboard/{ticker}", response_class=HTMLResponse)
+def dashboard(ticker: str, db: Session = Depends(get_db)):
+
+    prices = (
+        db.query(StockPrice)
+        .filter(StockPrice.ticker == ticker.upper())
+        .order_by(StockPrice.date)
+        .all()
+    )
+
+    if not prices:
+        return "<h1>Данные не найдены</h1>"
+
+    df = pd.DataFrame([
+        {
+            "date": p.date,
+            "close_price": p.close_price
+        }
+        for p in prices
+    ])
+
+    fig = px.line(
+        df,
+        x="date",
+        y="close_price",
+        title=f"График изменения цены закрытия: {ticker.upper()}"
+    )
+
+    avg_price = round(df["close_price"].mean(), 2)
+    max_price = round(df["close_price"].max(), 2)
+    min_price = round(df["close_price"].min(), 2)
+
+    close_prices = df["close_price"].tolist()
+    X = [[i] for i in range(len(close_prices))]
+    y = close_prices
+
+    model = LinearRegression()
+    model.fit(X, y)
+
+    predicted_price = model.predict([[len(close_prices)]])[0]
+    last_price = close_prices[-1]
+    expected_change = predicted_price - last_price
+
+    if expected_change > 1:
+        recommendation = "ПОКУПАТЬ"
+    elif expected_change < -1:
+        recommendation = "ПРОДАВАТЬ"
+    else:
+        recommendation = "ДЕРЖАТЬ"
+
+    return f"""
+    <html>
+    <head>
+        <title>Панель анализа финансового актива</title>
+    </head>
+    <body style="font-family: Arial; margin: 40px;">
+        <h1>Платформа анализа финансовых рынков</h1>
+        <h2>Аналитическая панель: {ticker.upper()}</h2>
+
+        <h3>Основные показатели</h3>
+        <ul>
+            <li><b>Средняя цена закрытия:</b> {avg_price}</li>
+            <li><b>Максимальная цена закрытия:</b> {max_price}</li>
+            <li><b>Минимальная цена закрытия:</b> {min_price}</li>
+        </ul>
+
+        <h3>Прогнозирование</h3>
+        <ul>
+            <li><b>Последняя цена:</b> {round(last_price, 2)}</li>
+            <li><b>Прогноз на следующий торговый день:</b> {round(predicted_price, 2)}</li>
+            <li><b>Ожидаемое изменение:</b> {round(expected_change, 2)}</li>
+            <li><b>Рекомендация системы:</b> {recommendation}</li>
+        </ul>
+
+        <h3>График изменения цены закрытия</h3>
+        {fig.to_html(full_html=False)}
+    </body>
+    </html>
+    """
